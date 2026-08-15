@@ -6,13 +6,48 @@
 
 Languages: **English** | [简体中文](README.zh-CN.md)
 
-A reusable Codex skill that finds YouTube videos, extracts accessible captions into metadata-rich JSON, and answers the user's actual question with clickable source timestamps.
+A reusable Codex skill that turns accessible YouTube captions into a compact, traceable analysis corpus—without requiring Codex to process the full video or depend entirely on the watch page.
+
+## The Problem It Solves
+
+YouTube analysis from an agent has four recurring problems:
+
+| Problem | What this skill changes |
+| --- | --- |
+| A YouTube watch page can be difficult for Codex to open or parse because it is dynamic, throttled, or guarded against automated requests. | The workflow does not make direct watch-page understanding a hard dependency. It extracts an available caption track separately and uses oEmbed or search only as metadata fallbacks. |
+| Sending full video, audio, or many sampled frames consumes much more model context than most spoken-content questions require. | The main analysis input is compact caption text, so context usage follows the spoken transcript instead of video resolution, frame count, and audio data. |
+| Plain copied captions lose track type, precise timing, and source provenance. | The extractor saves JSON first with raw floating-point timestamps, durations, language, and manual/automatic track metadata. |
+| A summary without source navigation is difficult to audit. | Important conclusions can link directly to the supporting moment in the original video. |
+
+This is especially useful when the user wants to know *what was said*: a summary, viewpoint map, outline, timeline, structured extraction, comparison, or a grounded answer from the transcript.
+
+## Why Captions First
+
+Only the spoken text and small metadata records need to enter the model's working context. The workflow does not upload video pixels, decode the complete audio track, or sample frames by default. For long videos, this can reduce token and processing cost substantially while still preserving the complete spoken sequence.
+
+The transcript is a corpus, not a fixed analysis template. Codex can summarize it, organize claims and evidence, retrieve relevant passages for RAG-style questions, or combine it with separately labeled external verification. The user's prompt determines the analysis.
+
+## When Direct YouTube Access Is Restricted
+
+The skill can sometimes continue when Codex cannot reliably consume the YouTube watch page, because caption retrieval is a separate step. If the caption track remains accessible, Codex can analyze the transcript even when watch-page metadata parsing fails; title and channel metadata then fall back from the video page to YouTube oEmbed and finally to search results.
+
+This is a resilient alternate path, not a promise to bypass YouTube controls. It does not defeat authentication, members-only access, age or region restrictions, disabled captions, or request throttling. If the caption endpoint is also unavailable, the subtitle workflow stops and reports the limitation.
+
+## Capability Boundary
+
+| Supported by the default workflow | Outside the default workflow |
+| --- | --- |
+| Public videos with an accessible human-authored or automatic caption track | Videos with no accessible captions, disabled captions, or caption requests blocked by YouTube |
+| Questions about spoken content: summaries, viewpoints, claims, numbers, timelines, comparisons, extraction, and transcript-grounded Q&A | Questions that depend on charts, demonstrations, gestures, speaker identity from images, on-screen text missing from captions, music, sound effects, tone, or editing |
+| Timestamp links that navigate to the supporting spoken passage | Independent verification that the speaker's claims are true |
+| Best-effort title, channel, and date metadata with explicit source and uncertainty fields | Guessing an upload date from a title, channel schedule, search context, or current date |
+| Reporting automatic-caption uncertainty and unclear wording | Silently correcting uncertain transcript text or inventing content from titles, thumbnails, comments, or search snippets |
+
+The skill never downloads or transcribes audio automatically when captions fail. Audio transcription or multimodal video analysis is a separate, potentially more expensive workflow and requires explicit user approval.
 
 ## What This Is
 
-This repository packages one Codex skill for subtitle-first YouTube analysis. It turns captions into compact text before model analysis, which is generally more token-efficient than processing full video, audio, or sampled frames.
-
-The transcript is a grounded source, not a fixed analysis template. Codex can summarize, organize viewpoints, extract structured facts, build timelines, compare videos, fact-check claims with external sources, or answer questions from the transcript as a RAG corpus.
+This repository packages one Codex skill and its caption extractor. It converts an available transcript into metadata-rich JSON, creates a readable timestamped text copy, and lets Codex complete the user's requested analysis with selective source links.
 
 ## Skill
 
@@ -88,6 +123,6 @@ env PYTHONPYCACHEPREFIX=/tmp/youtube-skill-pycache \
 
 ## Disclaimer
 
-This workflow analyzes available captions, not the complete audiovisual work. It is unsuitable by itself when the answer depends on frames, charts, gestures, on-screen text omitted from captions, music, sound effects, tone, or editing. Videos without accessible captions are outside the default workflow; audio transcription or multimodal video analysis requires a separate user-approved process.
+This workflow analyzes available captions, not the complete audiovisual work. Lower token usage is a design advantage, not a guarantee of a fixed reduction: transcript length, requested depth, and external verification still affect context usage.
 
 Automatic captions may contain recognition errors. Timestamp links provide navigation to the source speech, not independent verification of the speaker's claims.
