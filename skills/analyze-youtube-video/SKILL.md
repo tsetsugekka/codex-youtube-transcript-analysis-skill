@@ -102,6 +102,8 @@ mkdir -p tmp/youtube-analysis
 
 Use `--languages` when the likely caption language differs from the default `zh-Hans,zh-Hant,zh,en,ja`. Read the complete transcript before drawing conclusions; do not analyze only the first lines or search snippets.
 
+The bundled extractor waits a random 2–6 seconds before each subtitle request. Keep this pacing when running repeated extractions; it reduces burst traffic but does not bypass YouTube blocking. If YouTube returns `RequestBlocked`, `IPBlocked`, HTTP 429, or a similar rate-limit error, stop increasing request volume, report the endpoint family and error, and use the Gemini handoff or ask the user for another authorized workflow.
+
 Analyze from the JSON, not from the reading text. Preserve and use every segment's original floating-point `start` and `duration`, together with `language`, `language_code`, `is_generated`, and `track_type`. The reading text deliberately renders human-friendly integer timestamps and must not replace the JSON for evidence selection, chunking, transcript-type reporting, or precise source navigation.
 
 Resolve video metadata in this fixed fallback order:

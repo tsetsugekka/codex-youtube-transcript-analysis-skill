@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 import sys
+import time
 from datetime import date
 from html import unescape
 from html.parser import HTMLParser
@@ -261,6 +263,9 @@ def fetch_segments(
     video_id: str, languages: list[str]
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """获取字幕片段；优先使用新版实例 API，同时兼容旧版静态 API。"""
+    # YouTube 对短时间内重复请求字幕接口较敏感。脚本通常由批量任务
+    # 逐视频调用，因此每次提取前都留出一个小的随机间隔，降低触发限流的概率。
+    time.sleep(random.uniform(2.0, 6.0))
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
     except ImportError as exc:
