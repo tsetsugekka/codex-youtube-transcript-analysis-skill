@@ -112,19 +112,20 @@ Resolve video metadata in this fixed fallback order:
 
 Inspect `video.metadata_sources`, `video.metadata_errors`, and `video.date_status` before presenting metadata. A metadata failure does not by itself mean subtitle extraction failed. Never infer an upload or publication date from the title, video ID, surrounding search results, channel cadence, or current date. Use a date as an upload/publication date only when the source explicitly identifies it as such. If only `video.title_date` is available, label it explicitly as `title date` (or the equivalent in the response language) and make clear that it is not a verified upload/publication date. If no date can be confirmed, label it `date unknown` (or the equivalent in the response language).
 
-If no captions are available, try one reasonable alternate language ordering. If that still fails, report that the video lacks accessible captions or that YouTube blocked the request. Do not invent an analysis from the title and description. Then provide a copy-ready Gemini prompt using the user's current request language and the exact target URL. Preserve the `@youtube` invocation and the three requested outputs; translate the natural-language instructions rather than leaving them in a different language. For a Chinese request, use:
+If no captions are available, try one reasonable alternate language ordering. If that still fails, report that the video lacks accessible captions or that YouTube blocked the request. Do not invent an analysis from the title and description. Then provide a copy-ready Gemini prompt using the user's current request language, the exact target URL, and the substantive task from the user's original request. Preserve the requested task type, focus, level of detail, and output format instead of forcing a fixed summary structure. Items such as core themes, viewpoints, itemized information, or recommendations are examples only and should appear only when they fit the user's request. For a Chinese request, use this adaptable template:
 
 ```text
 @youtube
-请使用你内置的 YouTube 扩展程序，直接读取并详细总结这个视频的内容：YOUTUBE_URL
+请使用你内置的 YouTube 扩展程序，直接读取并分析这个视频：YOUTUBE_URL
 
-请为我列出：
-1. 视频的核心主题与观点。
-2. 视频中提到的具体分条信息和建议。
-3. 严格对齐时间轴：请在分析时，在关键观点后面标注对应的精准时间，以带有 ?t=xxx 的链接，链接到原视频的对应位置。
+请按照我最初的要求完成以下任务：
+USER_REQUEST
+
+请根据上述要求自行选择最合适的分析结构、重点、详细程度和输出格式，不要机械套用固定模板。
+请严格对齐时间轴：在关键结论、回答或提取结果后标注对应的精准时间，以带有 ?t=xxx 的链接，链接到原视频的对应位置。
 ```
 
-Replace `YOUTUBE_URL` with the canonical video URL before presenting the prompt. For another request language, translate the prompt naturally into that language while retaining `@youtube`, the target URL, the numbered structure, and the requirement for precise `?t=xxx` links. Present this as an option the user can paste into Gemini; do not claim that Codex ran Gemini, that the extension is available to every account, or that the resulting timestamps are guaranteed accurate.
+Replace `YOUTUBE_URL` with the canonical video URL and `USER_REQUEST` with a concise restatement of the user's substantive original task before presenting the prompt. Do not copy unrelated conversation context, private data, or setup discussion into `USER_REQUEST`. If the current message is shorthand such as “这个视频呢”, inherit the task from clear conversation context; ask a concise clarification only when the intended task would materially change the result and cannot be inferred safely. For another request language, translate the prompt naturally into that language while retaining `@youtube`, the target URL, the user's actual task, and the requirement for precise `?t=xxx` links after relevant results. Present this as an option the user can paste into Gemini; do not claim that Codex ran Gemini, that the extension is available to every account, or that the resulting timestamps are guaranteed accurate.
 
 Do not automatically fall back to downloading video, transcribing audio, or sending the YouTube URL to a multimodal model. Ask the user before expanding Codex's own workflow to audio transcription or multimodal analysis. Merely providing the copy-ready Gemini prompt does not require that additional permission because it does not execute or transmit the video on the user's behalf.
 

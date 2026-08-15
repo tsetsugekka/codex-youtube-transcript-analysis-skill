@@ -43,7 +43,7 @@ This is a resilient alternate path, not a promise to bypass YouTube controls. It
 | Best-effort title, channel, and date metadata with explicit source and uncertainty fields | Guessing an upload date from a title, channel schedule, search context, or current date |
 | Reporting automatic-caption uncertainty and unclear wording | Silently correcting uncertain transcript text or inventing content from titles, thumbnails, comments, or search snippets |
 
-The skill never downloads or transcribes audio automatically when captions fail. It instead offers a copy-ready Gemini `@youtube` prompt in the language of the user's current request, with the canonical video URL and a request for precise `?t=xxx` source links. This is a handoff option, not a claim that Codex ran Gemini or bypassed YouTube controls. Audio transcription or multimodal video analysis by Codex remains a separate, potentially more expensive workflow and requires explicit user approval.
+The skill never downloads or transcribes audio automatically when captions fail. It instead offers a copy-ready Gemini `@youtube` prompt in the language of the user's current request, preserving the original task, focus, requested detail, and output format while adding the canonical video URL and precise `?t=xxx` source-link requirement. This is a handoff option, not a claim that Codex ran Gemini or bypassed YouTube controls. Audio transcription or multimodal video analysis by Codex remains a separate, potentially more expensive workflow and requires explicit user approval.
 
 ## What This Is
 
@@ -73,13 +73,16 @@ If captions are unavailable, the skill can produce a same-language Gemini handof
 
 ```text
 @youtube
-Please use your built-in YouTube extension to read and provide a detailed summary of this video: YOUTUBE_URL
+Please use your built-in YouTube extension to directly read and analyze this video: YOUTUBE_URL
 
-Please list:
-1. The video's core themes and viewpoints.
-2. The specific itemized information and recommendations mentioned in the video.
-3. Align strictly with the timeline: after each key point, add the precise timestamp as a link containing ?t=xxx that opens the corresponding position in the original video.
+Please complete this original task:
+USER_REQUEST
+
+Choose the structure, focus, level of detail, and output format that best fit the task instead of forcing a fixed template.
+Align strictly with the timeline: after each key conclusion, answer, or extracted result, add a precise timestamp link containing ?t=xxx that opens the corresponding position in the original video.
 ```
+
+The skill replaces `USER_REQUEST` with the user's actual task. Core themes, viewpoints, itemized facts, and recommendations are possible outputs, not mandatory fields.
 
 ## Features
 
@@ -90,7 +93,7 @@ Please list:
 - Never infers upload dates. It labels a date found only in the title as `title date`, and otherwise reports `date unknown`.
 - Adds selective links such as `https://www.youtube.com/watch?v=VIDEO_ID&t=51s` so readers can jump to supporting speech.
 - Keeps analysis prompt-driven instead of forcing a generic summary or viewpoint template.
-- When captions remain unavailable, returns a copy-ready Gemini `@youtube` prompt in the user's request language instead of inventing an analysis.
+- When captions remain unavailable, returns a copy-ready Gemini `@youtube` prompt that preserves the user's original task instead of inventing an analysis or imposing a fixed summary template.
 
 ## Recommended Layout
 
