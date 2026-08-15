@@ -88,6 +88,8 @@ The skill replaces `USER_REQUEST` with the user's actual task. Core themes, view
 
 - Processes the complete video by default, even when the supplied URL contains `t=`, `start=`, or a timestamp fragment.
 - Saves structured JSON first, preserving raw floating-point start times, durations, caption language, and manual/automatic track type.
+- Selects captions in this order: the user's requested or prompt language, the language conservatively inferred from the original video title, English, then any accessible track. A different-language caption is still extracted instead of being treated as no captions.
+- Passes a dedicated `requests.Session` with a normal desktop-browser `User-Agent` to `youtube-transcript-api`; HTTP `Accept-Language` is not used as the caption-selection mechanism.
 - Waits a random 2–6 seconds before each subtitle request to reduce burst traffic; it does not bypass YouTube blocking, and rate-limit errors stop further retries.
 - Generates a separate readable transcript with human-friendly timestamps.
 - Resolves metadata in a fixed order: YouTube video page, YouTube oEmbed, then current search results when Codex still needs missing fields.
@@ -137,7 +139,7 @@ env PYTHONPYCACHEPREFIX=/tmp/youtube-skill-pycache \
 - Use the isolated skill virtual environment; do not install dependencies globally or with `sudo pip`.
 - Treat private, members-only, age-restricted, region-blocked, or authentication-gated captions as inaccessible unless the user explicitly authorizes a separate authenticated workflow.
 - Metadata lookup failures must not be hidden, and repeated requests must stop when YouTube appears rate-limited.
-- Each subtitle request uses a random 2–6 second delay; `RequestBlocked`, `IPBlocked`, HTTP 429, and similar errors are reported and stop further request volume.
+- A custom `User-Agent` and the random 2–6 second delay improve request compatibility and pacing; neither bypasses `RequestBlocked`, `IPBlocked`, HTTP 429, authentication, or regional controls.
 
 ## Disclaimer
 

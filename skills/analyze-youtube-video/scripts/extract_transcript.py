@@ -18,13 +18,13 @@ from urllib.parse import parse_qs, urljoin, urlparse
 
 
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
-DEFAULT_LANGUAGES = ("zh-Hans", "zh-Hant", "zh", "en", "ja")
+ENGLISH_FALLBACK_LANGUAGE = "en"
 YOUTUBE_BASE_URL = "https://www.youtube.com"
 REQUEST_TIMEOUT_SECONDS = 15
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0 Safari/537.36"
+    "Chrome/124.0.0.0 Safari/537.36"
 )
 
 
@@ -76,6 +76,101 @@ def extract_video_id(value: str) -> str:
 
 def canonical_video_url(video_id: str) -> str:
     return f"{YOUTUBE_BASE_URL}/watch?v={video_id}"
+
+
+def normalize_language_code(value: str) -> str:
+    """Normalize common YouTube/BCP-47 language-code variants for matching."""
+    code = value.strip().replace("_", "-").lower()
+    aliases = {
+        "jp": "ja",
+        "zh-cn": "zh-hans",
+        "zh-sg": "zh-hans",
+        "zh-tw": "zh-hant",
+        "zh-hk": "zh-hant",
+        "zh-mo": "zh-hant",
+    }
+    return aliases.get(code, code)
+
+
+def language_codes_match(preferred: str, available: str) -> bool:
+    preferred_code = normalize_language_code(preferred)
+    available_code = normalize_language_code(available)
+    if preferred_code == available_code:
+        return True
+    if preferred_code == "zh":
+        return available_code == "zh" or available_code.startswith("zh-")
+    return available_code.startswith(f"{preferred_code}-") or preferred_code.startswith(
+        f"{available_code}-"
+    )
+
+
+def infer_title_language_codes(title: Optional[str]) -> list[str]:
+    """Conservatively infer title language only when the writing system is distinctive."""
+    if not title:
+        return []
+    if re.search(r"[\u3040-\u30ff]", title):
+        return ["ja"]
+    if re.search(r"[\uac00-\ud7af]", title):
+        return ["ko"]
+    if re.search(r"[\u4e00-\u9fff]", title):
+        # Han-only titles can be Chinese or Japanese. Keep both possibilities before
+        # the English fallback instead of claiming a certainty the text cannot supply.
+        return ["zh-Hans", "zh-Hant", "zh", "ja"]
+    if re.search(r"[\u0400-\u04ff]", title):
+        return ["ru"]
+    if re.search(r"[\u0600-\u06ff]", title):
+        return ["ar"]
+    if re.search(r"[\u0900-\u097f]", title):
+        return ["hi"]
+    return []
+
+
+def build_language_preferences(
+    requested_languages: list[str], title: Optional[str]
+) -> list[tuple[str, str]]:
+    """Build user -> title -> English language priorities without duplicates."""
+    preferences: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def add(code: str, reason: str) -> None:
+        normalized = normalize_language_code(code)
+        if normalized and normalized not in seen:
+            preferences.append((code, reason))
+            seen.add(normalized)
+
+    for code in requested_languages:
+        add(code, "user_preference")
+    for code in infer_title_language_codes(title):
+        add(code, "title_language")
+    add(ENGLISH_FALLBACK_LANGUAGE, "english_fallback")
+    return preferences
+
+
+def choose_transcript_track(
+    tracks: list[Any], preferences: list[tuple[str, str]]
+) -> tuple[Any, str, Optional[str]]:
+    """Choose a preferred track, then fall back to any available caption track."""
+    if not tracks:
+        raise RuntimeError("视频没有可访问的字幕轨道")
+
+    for preferred_code, reason in preferences:
+        matches = [
+            track
+            for track in tracks
+            if language_codes_match(
+                preferred_code, str(get_value(track, "language_code", ""))
+            )
+        ]
+        if matches:
+            manual = next(
+                (track for track in matches if get_value(track, "is_generated") is False),
+                None,
+            )
+            return manual or matches[0], reason, preferred_code
+
+    # TranscriptList already yields manual tracks before generated tracks. Preserve
+    # that quality preference while accepting any language rather than failing.
+    return tracks[0], "any_available_track", None
 
 
 def get_value(item: Any, name: str, default: Any = None) -> Any:
@@ -209,7 +304,7 @@ def fetch_video_metadata(video_id: str) -> dict[str, Any]:
         )
         return metadata
 
-    headers = {"User-Agent": USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"}
+    headers = {"User-Agent": USER_AGENT}
     try:
         response = requests.get(
             metadata["canonical_url"],
@@ -260,30 +355,40 @@ def fetch_video_metadata(video_id: str) -> dict[str, Any]:
 
 
 def fetch_segments(
-    video_id: str, languages: list[str]
+    video_id: str, requested_languages: list[str], title: Optional[str] = None
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """获取字幕片段；优先使用新版实例 API，同时兼容旧版静态 API。"""
+    """按用户语言、标题语言、英语、任意轨道的顺序获取字幕。"""
     # YouTube 对短时间内重复请求字幕接口较敏感。脚本通常由批量任务
     # 逐视频调用，因此每次提取前都留出一个小的随机间隔，降低触发限流的概率。
     time.sleep(random.uniform(2.0, 6.0))
     try:
+        import requests
         from youtube_transcript_api import YouTubeTranscriptApi
     except ImportError as exc:
         raise RuntimeError(
             "缺少依赖，请先运行: python3 -m pip install youtube-transcript-api"
         ) from exc
 
-    api = YouTubeTranscriptApi()
-    if hasattr(api, "fetch"):
-        transcript = api.fetch(video_id, languages=languages)
-        metadata = {
-            "language": get_value(transcript, "language"),
-            "language_code": get_value(transcript, "language_code"),
-            "is_generated": get_value(transcript, "is_generated"),
-        }
-    else:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
-        metadata = {"language": None, "language_code": None, "is_generated": None}
+    session = requests.Session()
+    session.headers.update({"User-Agent": USER_AGENT})
+    api = YouTubeTranscriptApi(http_client=session)
+    tracks = list(api.list(video_id))
+    preferences = build_language_preferences(requested_languages, title)
+    selected_track, selection_reason, matched_preference = choose_transcript_track(
+        tracks, preferences
+    )
+    transcript = selected_track.fetch()
+    metadata = {
+        "language": get_value(selected_track, "language")
+        or get_value(transcript, "language"),
+        "language_code": get_value(selected_track, "language_code")
+        or get_value(transcript, "language_code"),
+        "is_generated": get_value(selected_track, "is_generated"),
+        "selection_reason": selection_reason,
+        "matched_preference": matched_preference,
+        "requested_languages": requested_languages,
+        "title_language_candidates": infer_title_language_codes(title),
+    }
 
     segments = [
         {
@@ -371,8 +476,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-l",
         "--languages",
-        default=",".join(DEFAULT_LANGUAGES),
-        help="按优先级排列的语言代码，逗号分隔；默认: %(default)s",
+        default="",
+        help=(
+            "用户期望的字幕语言，按优先级用逗号分隔；省略时从视频标题语言开始，"
+            "随后尝试英语和任意可用字幕"
+        ),
     )
     parser.add_argument(
         "-f",
@@ -408,10 +516,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         video_id = extract_video_id(args.url)
         languages = [item.strip() for item in args.languages.split(",") if item.strip()]
-        if not languages:
-            parser.error("--languages 不能是空值")
-        segments, transcript_metadata = fetch_segments(video_id, languages)
         video_metadata = fetch_video_metadata(video_id)
+        segments, transcript_metadata = fetch_segments(
+            video_id, languages, title=video_metadata.get("title")
+        )
     except Exception as exc:
         print(f"字幕提取失败: {exc}", file=sys.stderr)
         return 1

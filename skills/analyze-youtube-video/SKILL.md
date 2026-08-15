@@ -95,12 +95,17 @@ Create a temporary task directory. Save structured JSON first as the analysis so
 mkdir -p tmp/youtube-analysis
 "$SKILL_DIR/.venv/bin/python" "$SKILL_DIR/scripts/extract_transcript.py" \
   "YOUTUBE_URL" \
+  --languages "USER_LANGUAGE_CODES" \
   --format json \
   --output "tmp/youtube-analysis/VIDEO_ID.json" \
   --text-output "tmp/youtube-analysis/VIDEO_ID.txt"
 ```
 
-Use `--languages` when the likely caption language differs from the default `zh-Hans,zh-Hant,zh,en,ja`. Read the complete transcript before drawing conclusions; do not analyze only the first lines or search snippets.
+Set `--languages` from an explicitly requested transcript language; otherwise use the language of the user's current request. For example, use `ja` for Japanese, `en` for English, and `zh-Hans,zh-Hant,zh` for Chinese. The extractor selects a track in this order: the supplied language codes, the language conservatively inferred from the video's parsed title, English, then any accessible caption track. Within the same language, prefer a human-authored track. A language mismatch is not a no-caption result: if a video has captions only in another language, extract them and let the model work from the actual track while reporting its language and automatic/manual status.
+
+Do not use HTTP `Accept-Language` as a substitute for caption-track selection. The extractor passes a dedicated `requests.Session` with a normal desktop-browser `User-Agent` to `youtube-transcript-api`; this can improve request compatibility but does not bypass IP, authentication, region, age, or rate-limit controls.
+
+Read the complete transcript before drawing conclusions; do not analyze only the first lines or search snippets.
 
 The bundled extractor waits a random 2–6 seconds before each subtitle request. Keep this pacing when running repeated extractions; it reduces burst traffic but does not bypass YouTube blocking. If YouTube returns `RequestBlocked`, `IPBlocked`, HTTP 429, or a similar rate-limit error, stop increasing request volume, report the endpoint family and error, and use the Gemini handoff or ask the user for another authorized workflow.
 
@@ -114,7 +119,7 @@ Resolve video metadata in this fixed fallback order:
 
 Inspect `video.metadata_sources`, `video.metadata_errors`, and `video.date_status` before presenting metadata. A metadata failure does not by itself mean subtitle extraction failed. Never infer an upload or publication date from the title, video ID, surrounding search results, channel cadence, or current date. Use a date as an upload/publication date only when the source explicitly identifies it as such. If only `video.title_date` is available, label it explicitly as `title date` (or the equivalent in the response language) and make clear that it is not a verified upload/publication date. If no date can be confirmed, label it `date unknown` (or the equivalent in the response language).
 
-If no captions are available, try one reasonable alternate language ordering. If that still fails, report that the video lacks accessible captions or that YouTube blocked the request. Do not invent an analysis from the title and description. Then provide a copy-ready Gemini prompt using the user's current request language, the exact target URL, and the substantive task from the user's original request. Preserve the requested task type, focus, level of detail, and output format instead of forcing a fixed summary structure. Items such as core themes, viewpoints, itemized information, or recommendations are examples only and should appear only when they fit the user's request. For a Chinese request, use this adaptable template:
+If the extractor reports that no caption tracks are accessible after its any-language fallback, report that the video lacks accessible captions or that YouTube blocked the request. Do not invent an analysis from the title and description. Then provide a copy-ready Gemini prompt using the user's current request language, the exact target URL, and the substantive task from the user's original request. Preserve the requested task type, focus, level of detail, and output format instead of forcing a fixed summary structure. Items such as core themes, viewpoints, itemized information, or recommendations are examples only and should appear only when they fit the user's request. For a Chinese request, use this adaptable template:
 
 ```text
 @youtube
