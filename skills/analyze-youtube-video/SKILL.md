@@ -1,6 +1,6 @@
 ---
 name: analyze-youtube-video
-description: Find a requested YouTube video or the latest relevant upload from a named channel, extract its available captions with the bundled transcript tool, and use the timestamped transcript as grounded source material for the user's requested task. Use when the user provides a YouTube URL or asks Codex to locate a video and create an abstract or detailed summary, organize viewpoints, build an outline or timeline, extract structured information, compare videos, fact-check claims, or answer questions from the transcript in a RAG-style grounded workflow; also use when the local subtitle environment needs first-time setup or repair.
+description: Find a requested YouTube video or the latest relevant upload from a named channel, extract its available captions with the bundled transcript tool, and use the timestamped transcript as grounded source material for the user's requested task. Use when the user provides a YouTube URL or asks Codex to locate a video and create an abstract or detailed summary, organize viewpoints, build an outline or timeline, extract structured information, compare videos, fact-check claims, or answer questions from the transcript in a RAG-style grounded workflow; also use when the local subtitle environment needs first-time setup or repair, or when unavailable captions require a same-language Gemini `@youtube` fallback prompt.
 ---
 
 # Analyze YouTube Video
@@ -13,7 +13,7 @@ Prefer subtitle-first processing because it converts a video into compact text b
 
 Require an accessible YouTube caption track, either human-authored or automatically generated. Treat videos with no captions, disabled captions, inaccessible private or members-only captions, or captions blocked by region, age, authentication, or YouTube request restrictions as unsupported by this Skill's default workflow.
 
-When captions cannot be retrieved, state that the subtitle workflow cannot process the video. Do not infer the video's contents from its title, thumbnail, description, comments, search snippets, or related coverage. Offer audio transcription or multimodal video analysis only as a separate workflow, explain the additional requirements or cost, and obtain the user's permission before proceeding.
+When captions cannot be retrieved, state that the subtitle workflow cannot process the video. Do not infer the video's contents from its title, thumbnail, description, comments, search snippets, or related coverage. Offer a copy-ready Gemini `@youtube` prompt in the language of the user's current request so the user can try Gemini's built-in YouTube extension. Also offer audio transcription or multimodal video analysis only as a separate workflow, explain the additional requirements or cost, and obtain the user's permission before proceeding.
 
 Treat transcript-based work as processing of spoken content only. It is not sufficient when the user's question depends on video frames, charts, demonstrations, gestures, on-screen text omitted from captions, speaker identity from the image, music, sound effects, vocal tone, or editing choices.
 
@@ -112,7 +112,21 @@ Resolve video metadata in this fixed fallback order:
 
 Inspect `video.metadata_sources`, `video.metadata_errors`, and `video.date_status` before presenting metadata. A metadata failure does not by itself mean subtitle extraction failed. Never infer an upload or publication date from the title, video ID, surrounding search results, channel cadence, or current date. Use a date as an upload/publication date only when the source explicitly identifies it as such. If only `video.title_date` is available, label it explicitly as `title date` (or the equivalent in the response language) and make clear that it is not a verified upload/publication date. If no date can be confirmed, label it `date unknown` (or the equivalent in the response language).
 
-If no captions are available, try one reasonable alternate language ordering. If that still fails, report that the video lacks accessible captions or that YouTube blocked the request. Do not invent an analysis from the title and description. Do not automatically fall back to downloading video, transcribing audio, or sending the YouTube URL to a multimodal model; ask the user before expanding to an audio-transcription workflow.
+If no captions are available, try one reasonable alternate language ordering. If that still fails, report that the video lacks accessible captions or that YouTube blocked the request. Do not invent an analysis from the title and description. Then provide a copy-ready Gemini prompt using the user's current request language and the exact target URL. Preserve the `@youtube` invocation and the three requested outputs; translate the natural-language instructions rather than leaving them in a different language. For a Chinese request, use:
+
+```text
+@youtube
+请使用你内置的 YouTube 扩展程序，直接读取并详细总结这个视频的内容：YOUTUBE_URL
+
+请为我列出：
+1. 视频的核心主题与观点。
+2. 视频中提到的具体分条信息和建议。
+3. 严格对齐时间轴：请在分析时，在关键观点后面标注对应的精准时间，以带有 ?t=xxx 的链接，链接到原视频的对应位置。
+```
+
+Replace `YOUTUBE_URL` with the canonical video URL before presenting the prompt. For another request language, translate the prompt naturally into that language while retaining `@youtube`, the target URL, the numbered structure, and the requirement for precise `?t=xxx` links. Present this as an option the user can paste into Gemini; do not claim that Codex ran Gemini, that the extension is available to every account, or that the resulting timestamps are guaranteed accurate.
+
+Do not automatically fall back to downloading video, transcribing audio, or sending the YouTube URL to a multimodal model. Ask the user before expanding Codex's own workflow to audio transcription or multimodal analysis. Merely providing the copy-ready Gemini prompt does not require that additional permission because it does not execute or transmit the video on the user's behalf.
 
 When YouTube appears rate-limited or blocked, report the host or endpoint family and observed error, then stop increasing request volume.
 
