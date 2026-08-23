@@ -492,11 +492,49 @@ def render_markdown(
     return "\n".join(lines)
 
 
-def write_output(content: str, output: Optional[str]) -> None:
+def verified_output_date(video: dict[str, Any]) -> Optional[str]:
+    """Return only a verified ISO upload/publication date for file naming."""
+    date_status = video.get("date_status")
+    field = {
+        "verified_upload_date": "upload_date",
+        "verified_publish_date": "publish_date",
+    }.get(date_status)
+    if not field:
+        return None
+
+    value = video.get(field)
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return None
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return None
+    return value
+
+
+def default_markdown_filename(video: dict[str, Any]) -> str:
+    video_id = str(video["video_id"])
+    verified_date = verified_output_date(video)
+    if verified_date:
+        return f"{verified_date}{video_id}.md"
+    return f"undated-{video_id}.md"
+
+
+def resolve_output_path(output: str, video: dict[str, Any]) -> Path:
+    """Auto-name output only when the supplied path is an existing directory."""
+    path = Path(output)
+    if path.is_dir():
+        return path / default_markdown_filename(video)
+    return path
+
+
+def write_output(
+    content: str, output: Optional[str], video: Optional[dict[str, Any]] = None
+) -> None:
     if not output or output == "-":
         sys.stdout.write(content.rstrip("\n") + "\n")
         return
-    path = Path(output)
+    path = resolve_output_path(output, video) if video is not None else Path(output)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content.rstrip("\n") + "\n", encoding="utf-8")
     print(f"已写入: {path}", file=sys.stderr)
@@ -519,7 +557,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-o",
         "--output",
-        help="Markdown 输出文件路径；省略或传 - 时输出到终端",
+        help=(
+            "Markdown 输出文件或已存在目录；目录会自动生成 "
+            "YYYY-MM-DD<video-id>.md，无验证日期时使用 undated-<video-id>.md；"
+            "省略或传 - 时输出到终端"
+        ),
     )
     return parser
 
@@ -540,7 +582,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     content = render_markdown(video_metadata, transcript_metadata, segments)
-    write_output(content, args.output)
+    write_output(content, args.output, video_metadata)
     return 0
 
 

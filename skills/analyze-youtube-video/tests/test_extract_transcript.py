@@ -178,6 +178,60 @@ class MarkdownOutputTests(unittest.TestCase):
 
     @patch("extract_transcript.fetch_segments")
     @patch("extract_transcript.fetch_video_metadata")
+    def test_cli_auto_names_directory_output_from_verified_upload_date(
+        self, mock_metadata, mock_segments
+    ) -> None:
+        mock_metadata.return_value = self.video
+        mock_segments.return_value = (self.segments, self.transcript)
+
+        with TemporaryDirectory() as tmp_dir:
+            return_code = extract_transcript.main(
+                ["abcdefghijk", "--output", tmp_dir]
+            )
+
+            output_path = Path(tmp_dir) / "2026-08-22abcdefghijk.md"
+            self.assertEqual(return_code, 0)
+            self.assertEqual(list(Path(tmp_dir).iterdir()), [output_path])
+            self.assertIn("## Transcript", output_path.read_text(encoding="utf-8"))
+
+    def test_publication_date_and_undated_filename_fallbacks(self) -> None:
+        publish_video = {
+            **self.video,
+            "upload_date": None,
+            "publish_date": "2026-08-23",
+            "date_status": "verified_publish_date",
+        }
+        title_date_only = {
+            **self.video,
+            "upload_date": None,
+            "publish_date": None,
+            "title_date": "2026-08-24",
+            "date_status": "title_date_only",
+        }
+
+        self.assertEqual(
+            extract_transcript.default_markdown_filename(publish_video),
+            "2026-08-23abcdefghijk.md",
+        )
+        self.assertEqual(
+            extract_transcript.default_markdown_filename(title_date_only),
+            "undated-abcdefghijk.md",
+        )
+
+    def test_invalid_verified_date_falls_back_to_undated(self) -> None:
+        invalid_date = {
+            **self.video,
+            "upload_date": "2026-02-30",
+            "date_status": "verified_upload_date",
+        }
+
+        self.assertEqual(
+            extract_transcript.default_markdown_filename(invalid_date),
+            "undated-abcdefghijk.md",
+        )
+
+    @patch("extract_transcript.fetch_segments")
+    @patch("extract_transcript.fetch_video_metadata")
     def test_cli_defaults_to_markdown_on_stdout(
         self, mock_metadata, mock_segments
     ) -> None:

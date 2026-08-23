@@ -113,8 +113,10 @@ mkdir -p tmp/youtube-analysis
 "$SKILL_DIR/.venv/bin/python" "$SKILL_DIR/scripts/extract_transcript.py" \
   "YOUTUBE_URL" \
   --languages "USER_LANGUAGE_CODES" \
-  --output "tmp/youtube-analysis/VIDEO_ID.md"
+  --output "tmp/youtube-analysis/"
 ```
+
+When `--output` points to an existing directory, the extractor names the document `YYYY-MM-DD<video-id>.md`, for example `2026-08-21hSpi0XG7xDQ.md`. It uses only a verified `upload_date` or `publish_date`; a date parsed from the title is never treated as verified. If neither verified date exists, the name is `undated-<video-id>.md`. Passing an explicit file path remains supported and preserves that exact path.
 
 Set `--languages` from an explicitly requested transcript language; otherwise use the language of the user's current request. For example, use `ja` for Japanese, `en` for English, and `zh-Hans,zh-Hant,zh` for Chinese. The extractor selects a track in this order: the supplied language codes, the language conservatively inferred from the video's parsed title, English, then any accessible caption track. Within the same language, prefer a human-authored track. A language mismatch is not a no-caption result: if a video has captions only in another language, extract them and let the model work from the actual track while reporting its language and automatic/manual status.
 

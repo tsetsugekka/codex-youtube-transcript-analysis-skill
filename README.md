@@ -90,6 +90,7 @@ The skill replaces `USER_REQUEST` with the user's actual task. Core themes, view
 - Processes the complete video by default, even when the supplied URL contains `t=`, `start=`, or a timestamp fragment.
 - Uses one official channel RSS request to discover recent uploads and publication timestamps after resolving the official channel ID; the saved feed is reused for the task.
 - Saves one self-contained Markdown transcript. YAML frontmatter preserves video and caption-track metadata; every subtitle bullet keeps raw floating-point `start` and `duration`, a millisecond timestamp, and a clickable YouTube link.
+- When `--output` is an existing directory, automatically names the document `YYYY-MM-DD<video-id>.md` from a verified upload/publication date; title-only or unknown dates safely fall back to `undated-<video-id>.md`.
 - Selects captions in this order: the user's requested or prompt language, the language conservatively inferred from the original video title, English, then any accessible track. A different-language caption is still extracted instead of being treated as no captions.
 - Passes a dedicated `requests.Session` with a normal desktop-browser `User-Agent` to `youtube-transcript-api`; HTTP `Accept-Language` is not used as the caption-selection mechanism.
 - Waits a random 2–6 seconds before each subtitle request to reduce burst traffic; it does not bypass YouTube blocking, and rate-limit errors stop further retries.
