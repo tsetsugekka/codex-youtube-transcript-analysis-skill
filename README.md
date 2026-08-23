@@ -17,6 +17,7 @@ YouTube analysis from an agent has four recurring problems:
 | A YouTube watch page can be difficult for Codex to open or parse because it is dynamic, throttled, or guarded against automated requests. | The workflow does not make direct watch-page understanding a hard dependency. It extracts an available caption track separately and uses oEmbed or search only as metadata fallbacks. |
 | Sending full video, audio, or many sampled frames consumes much more model context than most spoken-content questions require. | The main analysis input is compact caption text, so context usage follows the spoken transcript instead of video resolution, frame count, and audio data. |
 | Plain copied captions lose track type, precise timing, and source provenance. | The extractor saves JSON first with raw floating-point timestamps, durations, language, and manual/automatic track metadata. |
+| Finding a channel's latest or recent uploads through repeated search requests is slow and can increase request volume. | After the official channel ID is known, one YouTube RSS request returns a reusable recent-upload list with publication timestamps. |
 | A summary without source navigation is difficult to audit. | Important conclusions can link directly to the supporting moment in the original video. |
 
 This is especially useful when the user wants to know *what was said*: a summary, viewpoint map, outline, timeline, structured extraction, comparison, or a grounded answer from the transcript.
@@ -47,7 +48,7 @@ The skill never downloads or transcribes audio automatically when captions fail.
 
 ## What This Is
 
-This repository packages one Codex skill and its caption extractor. It converts an available transcript into metadata-rich JSON, creates a readable timestamped text copy, and lets Codex complete the user's requested analysis with selective source links.
+This repository packages one Codex skill, a channel RSS helper, and a caption extractor. It identifies recent candidate videos efficiently, converts an available transcript into metadata-rich JSON, creates a readable timestamped text copy, and lets Codex complete the user's requested analysis with selective source links.
 
 ## Skill
 
@@ -87,6 +88,7 @@ The skill replaces `USER_REQUEST` with the user's actual task. Core themes, view
 ## Features
 
 - Processes the complete video by default, even when the supplied URL contains `t=`, `start=`, or a timestamp fragment.
+- Uses one official channel RSS request to discover recent uploads and publication timestamps after resolving the official channel ID; the saved feed is reused for the task.
 - Saves structured JSON first, preserving raw floating-point start times, durations, caption language, and manual/automatic track type.
 - Selects captions in this order: the user's requested or prompt language, the language conservatively inferred from the original video title, English, then any accessible track. A different-language caption is still extracted instead of being treated as no captions.
 - Passes a dedicated `requests.Session` with a normal desktop-browser `User-Agent` to `youtube-transcript-api`; HTTP `Accept-Language` is not used as the caption-selection mechanism.
@@ -107,7 +109,9 @@ skills/
     requirements.txt
     agents/openai.yaml
     scripts/extract_transcript.py
+    scripts/list_channel_feed.py
     tests/test_extract_transcript.py
+    tests/test_list_channel_feed.py
 ```
 
 ## Installation and Usage

@@ -1,6 +1,6 @@
 ---
 name: analyze-youtube-video
-description: Find a requested YouTube video or the latest relevant upload from a named channel, extract its available captions with the bundled transcript tool, and use the timestamped transcript as grounded source material for the user's requested task. Use when the user provides a YouTube URL or asks Codex to locate a video and create an abstract or detailed summary, organize viewpoints, build an outline or timeline, extract structured information, compare videos, fact-check claims, or answer questions from the transcript in a RAG-style grounded workflow; also use when the local subtitle environment needs first-time setup or repair, or when unavailable captions require a same-language Gemini `@youtube` fallback prompt.
+description: Find a requested YouTube video or recent uploads from a named channel, prefer the official channel RSS feed for efficient discovery, extract available captions with the bundled transcript tool, and use the timestamped transcript as grounded source material for the user's requested task. Use when the user provides a YouTube URL or asks Codex to locate a video and create an abstract or detailed summary, organize viewpoints, build an outline or timeline, extract structured information, compare videos, fact-check claims, or answer questions from the transcript in a RAG-style grounded workflow; also use when the local subtitle environment needs first-time setup or repair, or when unavailable captions require a same-language Gemini `@youtube` fallback prompt.
 ---
 
 # Analyze YouTube Video
@@ -24,6 +24,7 @@ When those non-text signals are material, tell the user that the subtitle workfl
 Resolve `SKILL_DIR` to the installed directory containing this `SKILL.md`. Do not use the literal placeholder below. Keep these paths canonical:
 
 - Extractor: `$SKILL_DIR/scripts/extract_transcript.py`
+- Channel-feed helper: `$SKILL_DIR/scripts/list_channel_feed.py`
 - Dependency lock: `$SKILL_DIR/requirements.txt`
 - Virtual environment: `$SKILL_DIR/.venv/`
 - Temporary transcripts: `tmp/youtube-analysis/`
@@ -44,6 +45,19 @@ Identify:
 
 Use an explicit user-provided URL directly after validating that it is a YouTube URL. When the user names a channel or asks for the latest video, search the current internet and prefer the official channel or official video page. Verify the channel identity, title, URL, and any explicitly sourced upload date needed to select the correct video before extracting subtitles. If the date cannot be confirmed, do not infer it; use other verified selection evidence or ask a concise question when the candidates remain ambiguous.
 
+For the latest upload, recent uploads, or a date range likely covered by the channel's current feed, prefer YouTube's official channel RSS feed after resolving the official channel ID. Make one feed request, save the result, and reuse it for the task instead of repeatedly searching or opening one page per candidate:
+
+```bash
+mkdir -p tmp/youtube-analysis
+"$SKILL_DIR/.venv/bin/python" "$SKILL_DIR/scripts/list_channel_feed.py" \
+  "CHANNEL_ID_OR_CHANNEL_URL" \
+  --output "tmp/youtube-analysis/CHANNEL_ID.feed.json"
+```
+
+The feed helper accepts a `UC...` channel ID or an official `/channel/UC...` URL. A handle such as `@creator` must first be resolved to the official channel ID through the channel page or current web search. Treat the feed's `published` value as an official publication timestamp and convert it from UTC to the user's relevant timezone when presenting a schedule. Do not confuse `updated` with publication time. Retain the feed JSON as selection evidence for the active task.
+
+The RSS feed exposes only a recent window and does not itself prove whether an entry is a completed standard upload, Short, premiere, or livestream, or whether captions are available. Apply the user's scope, verify ambiguous entry types using the official video or channel page, and fall back to the official channel page or current search when the requested history is outside the feed window. RSS discovery finds candidate URLs; it does not replace caption extraction.
+
 Treat URL parameters such as `t=51s`, `start=51`, or timestamp fragments as playback navigation only. Unless the user explicitly asks to start at that time, analyze that segment, or restrict the task to a stated range, extract and process the complete video from the beginning. Do not infer a partial-video scope merely because the submitted URL contains a timestamp. When the user explicitly requests a segment, preserve enough context before and after the range to interpret it accurately.
 
 For “latest video,” normally select the newest completed public upload with usable content. Do not substitute a scheduled premiere, still-running livestream, Short, or third-party repost unless it matches the request. If two candidates remain materially ambiguous, ask one concise question.
@@ -56,6 +70,7 @@ Check existing state before installing anything:
 command -v python3
 python3 --version
 test -f "$SKILL_DIR/scripts/extract_transcript.py"
+test -f "$SKILL_DIR/scripts/list_channel_feed.py"
 test -f "$SKILL_DIR/requirements.txt"
 test -x "$SKILL_DIR/.venv/bin/python"
 ```
@@ -116,6 +131,8 @@ Resolve video metadata in this fixed fallback order:
 1. Use the extractor's parsed YouTube video-page metadata.
 2. If title or channel is still missing, use the extractor's YouTube oEmbed fallback.
 3. If required metadata remains missing, search the current web and use the official YouTube video/search result where possible.
+
+When the video was selected from the official channel RSS feed, its retained `published` timestamp is also valid publication-date evidence. Keep that discovery evidence separate from the extractor JSON instead of pretending the extractor returned it.
 
 Inspect `video.metadata_sources`, `video.metadata_errors`, and `video.date_status` before presenting metadata. A metadata failure does not by itself mean subtitle extraction failed. Never infer an upload or publication date from the title, video ID, surrounding search results, channel cadence, or current date. Use a date as an upload/publication date only when the source explicitly identifies it as such. If only `video.title_date` is available, label it explicitly as `title date` (or the equivalent in the response language) and make clear that it is not a verified upload/publication date. If no date can be confirmed, label it `date unknown` (or the equivalent in the response language).
 
