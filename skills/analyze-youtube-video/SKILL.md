@@ -1,11 +1,11 @@
 ---
 name: analyze-youtube-video
-description: Find a requested YouTube video or recent uploads from a named channel, prefer the official channel RSS feed for efficient discovery, extract available captions with the bundled transcript tool, and use the timestamped transcript as grounded source material for the user's requested task. Use when the user provides a YouTube URL or asks Codex to locate a video and create an abstract or detailed summary, organize viewpoints, build an outline or timeline, extract structured information, compare videos, fact-check claims, or answer questions from the transcript in a RAG-style grounded workflow; also use when the local subtitle environment needs first-time setup or repair, or when unavailable captions require a same-language Gemini `@youtube` fallback prompt.
+description: Find a requested YouTube video or recent uploads from a named channel, prefer the official channel RSS feed for efficient discovery, extract available captions into one self-contained timestamped Markdown document, and use that transcript as grounded source material for the user's requested task. Use when the user provides a YouTube URL or asks Codex to locate a video and create an abstract or detailed summary, organize viewpoints, build an outline or timeline, extract structured information, compare videos, fact-check claims, or answer questions from the transcript in a RAG-style grounded workflow; also use when the local subtitle environment needs first-time setup or repair, or when unavailable captions require a same-language Gemini `@youtube` fallback prompt.
 ---
 
 # Analyze YouTube Video
 
-Resolve the correct YouTube URL, extract timestamped subtitles with the bundled script, and use the transcript only according to the user's requested task or question.
+Resolve the correct YouTube URL, extract a self-contained Markdown transcript with the bundled script, and use it only according to the user's requested task or question.
 
 ## Feature and Boundary
 
@@ -27,7 +27,7 @@ Resolve `SKILL_DIR` to the installed directory containing this `SKILL.md`. Do no
 - Channel-feed helper: `$SKILL_DIR/scripts/list_channel_feed.py`
 - Dependency lock: `$SKILL_DIR/requirements.txt`
 - Virtual environment: `$SKILL_DIR/.venv/`
-- Temporary transcripts: `tmp/youtube-analysis/`
+- Temporary Markdown transcripts: `tmp/youtube-analysis/`
 - Durable user-requested studies: `research/youtube/<YYYY-MM-DD_topic>/`
 
 Keep `$SKILL_DIR/scripts/extract_transcript.py` as the single source of truth. Treat the Python script as a subtitle extractor only; do not embed a fixed analysis framework in it.
@@ -57,6 +57,8 @@ mkdir -p tmp/youtube-analysis
 The feed helper accepts a `UC...` channel ID or an official `/channel/UC...` URL. A handle such as `@creator` must first be resolved to the official channel ID through the channel page or current web search. Treat the feed's `published` value as an official publication timestamp and convert it from UTC to the user's relevant timezone when presenting a schedule. Do not confuse `updated` with publication time. Retain the feed JSON as selection evidence for the active task.
 
 The RSS feed exposes only a recent window and does not itself prove whether an entry is a completed standard upload, Short, premiere, or livestream, or whether captions are available. Apply the user's scope, verify ambiguous entry types using the official video or channel page, and fall back to the official channel page or current search when the requested history is outside the feed window. RSS discovery finds candidate URLs; it does not replace caption extraction.
+
+Keep this discovery helper separate from transcript storage. Its temporary JSON output is selection evidence for the active task only. This Skill does not create or maintain annual transcript indexes, year catalogs, archive feeds, or retained RSS products; those belong to a separate archive system when needed.
 
 Treat URL parameters such as `t=51s`, `start=51`, or timestamp fragments as playback navigation only. Unless the user explicitly asks to start at that time, analyze that segment, or restrict the task to a stated range, extract and process the complete video from the beginning. Do not infer a partial-video scope merely because the submitted URL contains a timestamp. When the user explicitly requests a segment, preserve enough context before and after the range to interpret it accurately.
 
@@ -104,27 +106,25 @@ If `venv` or `pip` is missing because the Python installation is incomplete, app
 
 ### 3. Extract the Transcript and Metadata
 
-Create a temporary task directory. Save structured JSON first as the analysis source of truth, and generate the timestamped text only as a reading aid:
+Create a temporary task directory and write one self-contained Markdown transcript. This is the sole default persistent transcript artifact; do not create companion JSON or TXT files:
 
 ```bash
 mkdir -p tmp/youtube-analysis
 "$SKILL_DIR/.venv/bin/python" "$SKILL_DIR/scripts/extract_transcript.py" \
   "YOUTUBE_URL" \
   --languages "USER_LANGUAGE_CODES" \
-  --format json \
-  --output "tmp/youtube-analysis/VIDEO_ID.json" \
-  --text-output "tmp/youtube-analysis/VIDEO_ID.txt"
+  --output "tmp/youtube-analysis/VIDEO_ID.md"
 ```
 
 Set `--languages` from an explicitly requested transcript language; otherwise use the language of the user's current request. For example, use `ja` for Japanese, `en` for English, and `zh-Hans,zh-Hant,zh` for Chinese. The extractor selects a track in this order: the supplied language codes, the language conservatively inferred from the video's parsed title, English, then any accessible caption track. Within the same language, prefer a human-authored track. A language mismatch is not a no-caption result: if a video has captions only in another language, extract them and let the model work from the actual track while reporting its language and automatic/manual status.
 
 Do not use HTTP `Accept-Language` as a substitute for caption-track selection. The extractor passes a dedicated `requests.Session` with a normal desktop-browser `User-Agent` to `youtube-transcript-api`; this can improve request compatibility but does not bypass IP, authentication, region, age, or rate-limit controls.
 
-Read the complete transcript before drawing conclusions; do not analyze only the first lines or search snippets.
+Read the complete Markdown transcript before drawing conclusions; do not analyze only the first lines or search snippets.
 
 The bundled extractor waits a random 2–6 seconds before each subtitle request. Keep this pacing when running repeated extractions; it reduces burst traffic but does not bypass YouTube blocking. If YouTube returns `RequestBlocked`, `IPBlocked`, HTTP 429, or a similar rate-limit error, stop increasing request volume, report the endpoint family and error, and use the Gemini handoff or ask the user for another authorized workflow.
 
-Analyze from the JSON, not from the reading text. Preserve and use every segment's original floating-point `start` and `duration`, together with `language`, `language_code`, `is_generated`, and `track_type`. The reading text deliberately renders human-friendly integer timestamps and must not replace the JSON for evidence selection, chunking, transcript-type reporting, or precise source navigation.
+Use the Markdown document's YAML frontmatter and timestamped transcript together. The frontmatter retains all video and caption-track metadata. Each transcript item retains the original floating-point `start` and `duration`, plus a millisecond-readable clickable timestamp. Use the floating-point values for evidence selection and chunking; convert `start` to integer seconds only for YouTube's `t=SECONDSs` navigation parameter.
 
 Resolve video metadata in this fixed fallback order:
 
@@ -132,9 +132,9 @@ Resolve video metadata in this fixed fallback order:
 2. If title or channel is still missing, use the extractor's YouTube oEmbed fallback.
 3. If required metadata remains missing, search the current web and use the official YouTube video/search result where possible.
 
-When the video was selected from the official channel RSS feed, its retained `published` timestamp is also valid publication-date evidence. Keep that discovery evidence separate from the extractor JSON instead of pretending the extractor returned it.
+When the video was selected from the official channel RSS feed, its retained `published` timestamp is also valid publication-date evidence. Keep that discovery evidence separate from the transcript document instead of pretending the extractor returned it.
 
-Inspect `video.metadata_sources`, `video.metadata_errors`, and `video.date_status` before presenting metadata. A metadata failure does not by itself mean subtitle extraction failed. Never infer an upload or publication date from the title, video ID, surrounding search results, channel cadence, or current date. Use a date as an upload/publication date only when the source explicitly identifies it as such. If only `video.title_date` is available, label it explicitly as `title date` (or the equivalent in the response language) and make clear that it is not a verified upload/publication date. If no date can be confirmed, label it `date unknown` (or the equivalent in the response language).
+Inspect `video.metadata_sources`, `video.metadata_errors`, and `video.date_status` in the Markdown frontmatter before presenting metadata. A metadata failure does not by itself mean subtitle extraction failed. Never infer an upload or publication date from the title, video ID, surrounding search results, channel cadence, or current date. Use a date as an upload/publication date only when the source explicitly identifies it as such. If only `video.title_date` is available, label it explicitly as `title date` (or the equivalent in the response language) and make clear that it is not a verified upload/publication date. If no date can be confirmed, label it `date unknown` (or the equivalent in the response language).
 
 If the extractor reports that no caption tracks are accessible after its any-language fallback, report that the video lacks accessible captions or that YouTube blocked the request. Do not invent an analysis from the title and description. Then provide a copy-ready Gemini prompt using the user's current request language, the exact target URL, and the substantive task from the user's original request. Preserve the requested task type, focus, level of detail, and output format instead of forcing a fixed summary structure. Items such as core themes, viewpoints, itemized information, or recommendations are examples only and should appear only when they fit the user's request. For a Chinese request, use this adaptable template:
 
@@ -195,12 +195,12 @@ Normalize links to:
 https://www.youtube.com/watch?v=VIDEO_ID&t=SECONDSs
 ```
 
-Select evidence and supporting segments from the JSON's original floating-point timestamps. Convert to integer seconds only when constructing the YouTube `t=SECONDSs` URL and its visible human-readable label. Use the start of the supporting subtitle segment, or a few seconds earlier when necessary to preserve context. When one sentence depends on multiple distant passages, append multiple timestamp links. Keep the visible label human-readable, such as `[00:51]` or `[01:12:34]`.
+Select evidence and supporting segments from the Markdown timeline's original floating-point timestamps. Convert to integer seconds only when constructing a new YouTube `t=SECONDSs` URL. Use the start of the supporting subtitle segment, or a few seconds earlier when necessary to preserve context. When one sentence depends on multiple distant passages, append multiple timestamp links. Keep the visible label human-readable, such as `[00:51]` or `[01:12:34]`.
 
 These links support source navigation; they are not independent fact-check citations. State separately whether any external verification was performed.
 
 ### 6. Deliver the Result
 
-Include the video title, channel, verified upload/publication date when available, and clickable YouTube URL, followed by the summary, organization, extraction, grounded answer, comparison, or analysis requested by the user. When the date is not verified, use `title date` or `date unknown` in the response language according to the rules above rather than presenting an estimate. Add timestamp footnotes where they materially improve traceability. Mention uncertainty caused by automatic captions, translation, missing context, or unclear wording, using the JSON transcript-track metadata rather than guessing the caption type.
+Include the video title, channel, verified upload/publication date when available, and clickable YouTube URL, followed by the summary, organization, extraction, grounded answer, comparison, or analysis requested by the user. When the date is not verified, use `title date` or `date unknown` in the response language according to the rules above rather than presenting an estimate. Add timestamp footnotes where they materially improve traceability. Mention uncertainty caused by automatic captions, translation, missing context, or unclear wording, using the Markdown frontmatter's transcript-track metadata rather than guessing the caption type.
 
 Keep transcripts in `tmp/youtube-analysis/` for the active task and follow-up questions. Move them and any durable analysis into `research/youtube/<YYYY-MM-DD_topic>/` only when the user asks to retain the work or when the task explicitly calls for a durable research deliverable.

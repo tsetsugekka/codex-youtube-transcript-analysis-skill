@@ -1,4 +1,4 @@
 interface:
   display_name: "YouTube Transcript Analysis"
-  short_description: "Use subtitles for summaries, extraction, and grounded Q&A."
-  default_prompt: "Use $analyze-youtube-video to find a YouTube video, extract its subtitles, and complete my requested summary, organization, extraction, or grounded question answering."
+  short_description: "Extract Markdown subtitles for grounded YouTube analysis."
+  default_prompt: "Use $analyze-youtube-video to find a YouTube video, extract one self-contained Markdown transcript, and complete my requested grounded analysis."

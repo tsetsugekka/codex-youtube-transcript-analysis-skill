@@ -16,7 +16,7 @@ YouTube analysis from an agent has four recurring problems:
 | --- | --- |
 | A YouTube watch page can be difficult for Codex to open or parse because it is dynamic, throttled, or guarded against automated requests. | The workflow does not make direct watch-page understanding a hard dependency. It extracts an available caption track separately and uses oEmbed or search only as metadata fallbacks. |
 | Sending full video, audio, or many sampled frames consumes much more model context than most spoken-content questions require. | The main analysis input is compact caption text, so context usage follows the spoken transcript instead of video resolution, frame count, and audio data. |
-| Plain copied captions lose track type, precise timing, and source provenance. | The extractor saves JSON first with raw floating-point timestamps, durations, language, and manual/automatic track metadata. |
+| Plain copied captions lose track type, precise timing, and source provenance. | The extractor creates one self-contained Markdown document whose YAML frontmatter and transcript bullets retain raw floating-point timing, language, and manual/automatic track metadata. |
 | Finding a channel's latest or recent uploads through repeated search requests is slow and can increase request volume. | After the official channel ID is known, one YouTube RSS request returns a reusable recent-upload list with publication timestamps. |
 | A summary without source navigation is difficult to audit. | Important conclusions can link directly to the supporting moment in the original video. |
 
@@ -48,7 +48,7 @@ The skill never downloads or transcribes audio automatically when captions fail.
 
 ## What This Is
 
-This repository packages one Codex skill, a channel RSS helper, and a caption extractor. It identifies recent candidate videos efficiently, converts an available transcript into metadata-rich JSON, creates a readable timestamped text copy, and lets Codex complete the user's requested analysis with selective source links.
+This repository packages one Codex skill, a channel RSS helper, and a caption extractor. It identifies recent candidate videos efficiently, converts an available transcript into one metadata-rich Markdown document, and lets Codex complete the user's requested analysis with selective source links.
 
 ## Skill
 
@@ -89,16 +89,18 @@ The skill replaces `USER_REQUEST` with the user's actual task. Core themes, view
 
 - Processes the complete video by default, even when the supplied URL contains `t=`, `start=`, or a timestamp fragment.
 - Uses one official channel RSS request to discover recent uploads and publication timestamps after resolving the official channel ID; the saved feed is reused for the task.
-- Saves structured JSON first, preserving raw floating-point start times, durations, caption language, and manual/automatic track type.
+- Saves one self-contained Markdown transcript. YAML frontmatter preserves video and caption-track metadata; every subtitle bullet keeps raw floating-point `start` and `duration`, a millisecond timestamp, and a clickable YouTube link.
 - Selects captions in this order: the user's requested or prompt language, the language conservatively inferred from the original video title, English, then any accessible track. A different-language caption is still extracted instead of being treated as no captions.
 - Passes a dedicated `requests.Session` with a normal desktop-browser `User-Agent` to `youtube-transcript-api`; HTTP `Accept-Language` is not used as the caption-selection mechanism.
 - Waits a random 2–6 seconds before each subtitle request to reduce burst traffic; it does not bypass YouTube blocking, and rate-limit errors stop further retries.
-- Generates a separate readable transcript with human-friendly timestamps.
+- Does not create companion transcript JSON or TXT artifacts. The channel helper's temporary feed JSON is only candidate-selection evidence for the active task.
 - Resolves metadata in a fixed order: YouTube video page, YouTube oEmbed, then current search results when Codex still needs missing fields.
 - Never infers upload dates. It labels a date found only in the title as `title date`, and otherwise reports `date unknown`.
 - Adds selective links such as `https://www.youtube.com/watch?v=VIDEO_ID&t=51s` so readers can jump to supporting speech.
 - Keeps analysis prompt-driven instead of forcing a generic summary or viewpoint template.
 - When captions remain unavailable, returns a copy-ready Gemini `@youtube` prompt that preserves the user's original task instead of inventing an analysis or imposing a fixed summary template.
+
+The channel RSS helper is for recent-video discovery only. This general-purpose Skill does not maintain annual transcript indexes, year catalogs, archive RSS feeds, or long-term retention; those are responsibilities of a separate archive system.
 
 ## Recommended Layout
 

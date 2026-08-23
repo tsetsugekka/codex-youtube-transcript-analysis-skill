@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import unittest
 import sys
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
@@ -84,16 +87,109 @@ class MetadataFallbackTests(unittest.TestCase):
         self.assertIsNone(metadata["title_date"])
         self.assertEqual(metadata["date_status"], "unknown")
 
-    def test_readable_text_uses_explicit_unknown_date_label(self) -> None:
+    def test_markdown_uses_explicit_unknown_date_label(self) -> None:
         video = extract_transcript.empty_video_metadata("abcdefghijk")
         transcript = {"language": "Chinese", "language_code": "zh", "track_type": "manual"}
         segments = [{"text": "测试", "start": 1.25, "duration": 0.75}]
 
-        rendered = extract_transcript.render_readable_text(video, transcript, segments)
+        rendered = extract_transcript.render_markdown(video, transcript, segments)
 
-        self.assertIn("日期未知", rendered)
-        self.assertNotIn("上传日期", rendered)
-        self.assertNotIn("发布日期", rendered)
+        self.assertIn("- **Date:** Unknown", rendered)
+        self.assertNotIn("Upload date", rendered)
+        self.assertNotIn("Publication date", rendered)
+
+
+class MarkdownOutputTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.video = {
+            **extract_transcript.empty_video_metadata("abcdefghijk"),
+            "title": "Example video",
+            "channel_name": "Example channel",
+            "upload_date": "2026-08-22",
+            "date_status": "verified_upload_date",
+            "metadata_sources": ["youtube_video_page"],
+        }
+        self.transcript = {
+            "language": "Chinese",
+            "language_code": "zh-CN",
+            "is_generated": False,
+            "selection_reason": "user_preference",
+            "matched_preference": "zh",
+            "requested_languages": ["zh"],
+            "title_language_candidates": [],
+            "track_type": "manual",
+            "segment_count": 1,
+        }
+        self.segments = [
+            {
+                "text": "first line\nsecond line",
+                "start": 61.23456,
+                "duration": 2.34567,
+            }
+        ]
+
+    def test_markdown_contains_complete_metadata_and_precise_timeline(self) -> None:
+        rendered = extract_transcript.render_markdown(
+            self.video, self.transcript, self.segments
+        )
+
+        self.assertTrue(rendered.startswith("---\nschema_version: 1\n"))
+        self.assertIn('document_type: "youtube_transcript"', rendered)
+        self.assertIn('  video_id: "abcdefghijk"', rendered)
+        self.assertIn('  metadata_sources: ["youtube_video_page"]', rendered)
+        self.assertIn('  language_code: "zh-CN"', rendered)
+        self.assertIn("  is_generated: false", rendered)
+        self.assertIn(
+            "[01:01.235](https://www.youtube.com/watch?v=abcdefghijk&t=61s)",
+            rendered,
+        )
+        self.assertIn("`start=61.23456s` `duration=2.34567s`", rendered)
+        self.assertIn("first line second line", rendered)
+
+    @patch("extract_transcript.fetch_segments")
+    @patch("extract_transcript.fetch_video_metadata")
+    def test_cli_writes_one_markdown_artifact(
+        self, mock_metadata, mock_segments
+    ) -> None:
+        mock_metadata.return_value = self.video
+        mock_segments.return_value = (self.segments, self.transcript)
+
+        with TemporaryDirectory() as tmp_dir:
+            output_path = Path(tmp_dir) / "abcdefghijk.md"
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                return_code = extract_transcript.main(
+                    [
+                        "https://www.youtube.com/watch?v=abcdefghijk",
+                        "--languages",
+                        "zh",
+                        "--output",
+                        str(output_path),
+                    ]
+                )
+
+            self.assertEqual(return_code, 0)
+            self.assertTrue(output_path.is_file())
+            self.assertEqual(list(Path(tmp_dir).iterdir()), [output_path])
+            self.assertIn("## Transcript", output_path.read_text(encoding="utf-8"))
+            mock_segments.assert_called_once_with(
+                "abcdefghijk", ["zh"], title="Example video"
+            )
+
+    @patch("extract_transcript.fetch_segments")
+    @patch("extract_transcript.fetch_video_metadata")
+    def test_cli_defaults_to_markdown_on_stdout(
+        self, mock_metadata, mock_segments
+    ) -> None:
+        mock_metadata.return_value = self.video
+        mock_segments.return_value = (self.segments, self.transcript)
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            return_code = extract_transcript.main(["abcdefghijk"])
+
+        self.assertEqual(return_code, 0)
+        self.assertTrue(stdout.getvalue().startswith("---\nschema_version: 1\n"))
 
 
 class LanguageSelectionTests(unittest.TestCase):

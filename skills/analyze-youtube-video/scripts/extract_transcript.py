@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""从 YouTube URL 获取字幕、字幕轨道信息和基础视频元数据。"""
+"""从 YouTube URL 获取字幕并生成可持久保存的 Markdown 文档。"""
 
 from __future__ import annotations
 
@@ -410,67 +410,101 @@ def fetch_segments(
     return segments, metadata
 
 
-def format_timestamp(seconds: float) -> str:
-    total_seconds = max(0, int(seconds))
+def format_precise_timestamp(seconds: float) -> str:
+    """Render a readable timestamp while retaining millisecond precision."""
+    milliseconds = max(0, int(round(seconds * 1000)))
+    total_seconds, milliseconds = divmod(milliseconds, 1000)
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
+    return f"{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
 
 
-def render_text(segments: Iterable[dict[str, Any]], timestamps: bool) -> str:
-    if timestamps:
-        return "\n".join(
-            f"[{format_timestamp(segment['start'])}] {segment['text']}"
-            for segment in segments
-        )
-    return "\n".join(segment["text"] for segment in segments)
+def yaml_value(value: Any) -> str:
+    """Render JSON-compatible YAML scalars without adding a YAML dependency."""
+    return json.dumps(value, ensure_ascii=False)
 
 
-def render_readable_text(
+def render_yaml_mapping(name: str, values: dict[str, Any]) -> list[str]:
+    lines = [f"{name}:"]
+    for key, value in values.items():
+        lines.append(f"  {key}: {yaml_value(value)}")
+    return lines
+
+
+def normalize_transcript_text(value: Any) -> str:
+    return " ".join(str(value).splitlines()).strip()
+
+
+def render_markdown(
     video: dict[str, Any], transcript: dict[str, Any], segments: list[dict[str, Any]]
 ) -> str:
+    """Render the sole durable transcript artifact with metadata and precise timing."""
     if video.get("upload_date"):
-        date_line = f"上传日期: {video['upload_date']}"
+        date_label = "Upload date"
+        date_value = video["upload_date"]
     elif video.get("publish_date"):
-        date_line = f"发布日期: {video['publish_date']}"
+        date_label = "Publication date"
+        date_value = video["publish_date"]
     elif video.get("title_date"):
-        date_line = f"标题日期: {video['title_date']}（不是已验证的上传/发布日期）"
+        date_label = "Title date (not a verified upload/publication date)"
+        date_value = video["title_date"]
     else:
-        date_line = "日期未知"
+        date_label = "Date"
+        date_value = "Unknown"
 
     lines = [
-        f"标题: {video.get('title') or '未知'}",
-        f"频道: {video.get('channel_name') or '未知'}",
-        date_line,
-        f"视频: {video['canonical_url']}",
+        "---",
+        "schema_version: 1",
+        'document_type: "youtube_transcript"',
+        *render_yaml_mapping("video", video),
+        *render_yaml_mapping("transcript", transcript),
+        "---",
+        "",
+        f"# {video.get('title') or 'Untitled YouTube video'}",
+        "",
+        f"- **Channel:** {video.get('channel_name') or 'Unknown'}",
+        f"- **{date_label}:** {date_value}",
+        f"- **Video:** [Open on YouTube]({video['canonical_url']})",
         (
-            "字幕轨道: "
-            f"{transcript.get('language') or '未知'} "
+            "- **Caption track:** "
+            f"{transcript.get('language') or 'Unknown'} "
             f"({transcript.get('language_code') or 'unknown'}, "
             f"{transcript.get('track_type') or 'unknown'})"
         ),
-        f"字幕片段: {len(segments)}",
+        f"- **Segments:** {len(segments)}",
         "",
-        "---",
+        "## Transcript",
         "",
-        render_text(segments, timestamps=True),
     ]
+    for segment in segments:
+        start = float(segment["start"])
+        duration = float(segment["duration"])
+        seek_seconds = max(0, int(start))
+        timestamp = format_precise_timestamp(start)
+        url = f"{video['canonical_url']}&t={seek_seconds}s"
+        text = normalize_transcript_text(segment["text"])
+        lines.append(
+            f"- [{timestamp}]({url}) "
+            f"`start={start!r}s` `duration={duration!r}s` {text}"
+        )
     return "\n".join(lines)
 
 
 def write_output(content: str, output: Optional[str]) -> None:
     if not output or output == "-":
-        print(content)
+        sys.stdout.write(content.rstrip("\n") + "\n")
         return
     path = Path(output)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content + "\n", encoding="utf-8")
+    path.write_text(content.rstrip("\n") + "\n", encoding="utf-8")
     print(f"已写入: {path}", file=sys.stderr)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="从 YouTube URL 获取字幕、字幕轨道信息和基础视频元数据。"
+        description="从 YouTube URL 获取字幕并生成包含完整元数据和精确时间轴的 Markdown。"
     )
     parser.add_argument("url", help="YouTube URL，例如 https://www.youtube.com/watch?v=...")
     parser.add_argument(
@@ -483,26 +517,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "-f",
-        "--format",
-        choices=("text", "json"),
-        default="text",
-        help="主输出格式，默认 text",
-    )
-    parser.add_argument(
-        "-t",
-        "--timestamps",
-        action="store_true",
-        help="纯文本主输出时在每行前添加时间戳",
-    )
-    parser.add_argument(
         "-o",
         "--output",
-        help="主输出文件路径；省略或传 - 时输出到终端",
-    )
-    parser.add_argument(
-        "--text-output",
-        help="JSON 主输出时，同时写出带元数据与时间戳的阅读用文本",
+        help="Markdown 输出文件路径；省略或传 - 时输出到终端",
     )
     return parser
 
@@ -510,8 +527,6 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.text_output and args.format != "json":
-        parser.error("--text-output 只能与 --format json 一起使用")
 
     try:
         video_id = extract_video_id(args.url)
@@ -524,28 +539,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"字幕提取失败: {exc}", file=sys.stderr)
         return 1
 
-    if args.format == "json":
-        content = json.dumps(
-            {
-                "schema_version": 1,
-                "video": video_metadata,
-                "transcript": {
-                    **transcript_metadata,
-                    "segments": segments,
-                },
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    else:
-        content = render_text(segments, timestamps=args.timestamps)
-
+    content = render_markdown(video_metadata, transcript_metadata, segments)
     write_output(content, args.output)
-    if args.text_output:
-        write_output(
-            render_readable_text(video_metadata, transcript_metadata, segments),
-            args.text_output,
-        )
     return 0
 
 
