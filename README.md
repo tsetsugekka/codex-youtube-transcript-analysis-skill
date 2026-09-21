@@ -8,6 +8,10 @@ Languages: **English** | [简体中文](README.zh-CN.md)
 
 A reusable Codex skill that turns accessible YouTube captions into a compact, traceable analysis corpus—without requiring Codex to process the full video or depend entirely on the watch page.
 
+<p align="center">
+  <img src="assets/youtube-transcript-analysis.en.svg" alt="YouTube Transcript Analysis Skill infographic" width="720">
+</p>
+
 ## The Problem It Solves
 
 YouTube analysis from an agent has four recurring problems:
