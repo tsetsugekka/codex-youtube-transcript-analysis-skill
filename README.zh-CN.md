@@ -8,6 +8,10 @@
 
 一个可复用的 Codex Skill：把可访问的 YouTube 字幕转换成紧凑、可追溯的分析语料，不要求 Codex 处理完整视频，也不把直接读取播放页作为唯一前提。
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/tsetsugekka/lightweight-infographic-skill/main/skills/lightweight-infographic/assets/youtube-transcript-analysis.portrait.zh-CN.png" alt="Codex YouTube 字幕分析 Skill 信息图" width="720">
+</p>
+
 ## 它解决什么问题
 
 Agent 分析 YouTube 视频时经常遇到四类问题：
